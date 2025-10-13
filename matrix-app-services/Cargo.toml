@@ -9,13 +9,14 @@ axum = "0.8.6"
 axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 bon = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+ciborium = "0.2.2"
 genrs = "0.1.1"
 getset = "0.1.6"
 matrix-sdk = { workspace = true, features = ["anyhow", "markdown", "bundled-sqlite"] }
 openport = { version = "0.1.1" }
 parking_lot = { version = "0.12.5", features = ["serde", "arc_lock", "send_guard"] }
 rcgen = "0.14.5"
-reqwest = { workspace = true, features = ["json", "stream"] }
+reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
 ruma = { workspace = true, features = ["appservice-api", "client-api"] }
 rustls = "0.23.32"
 serde = { workspace = true, features = ["derive"] }

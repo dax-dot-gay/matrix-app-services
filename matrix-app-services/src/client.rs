@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rcgen::CertifiedKey;
-use sled::Tree;
+use reqwest::Certificate;
+use serde::{de::DeserializeOwned, Serialize};
 use tokio::{ sync::OnceCell, task::JoinHandle };
 
-use crate::Config;
+use crate::{types::user::UserRecord, Config};
 
 /// Appservice management instance
 #[derive(Debug, Clone)]
@@ -17,6 +18,7 @@ pub struct Appservice {
     certificate: String,
     signing_key: String,
     state: sled::Db,
+    proxy_token: String,
 }
 
 impl Appservice {
@@ -26,8 +28,17 @@ impl Appservice {
     }
 
     /// Gets a specific state collection
-    pub fn state(&self, collection: impl AsRef<str>) -> crate::Result<Tree> {
-        Ok(self.state.open_tree(collection.as_ref().as_bytes())?)
+    pub(crate) fn state<V: Serialize + DeserializeOwned>(&self, collection: impl AsRef<str>) -> crate::Result<crate::types::State<V>> {
+        Ok(crate::types::State::new(self.state.open_tree(collection.as_ref().as_bytes())?))
+    }
+
+    /// Gets a custom state (separated to explicitly not conflict with internal state)
+    pub fn custom_state<V: Serialize + DeserializeOwned>(&self, collection: impl AsRef<str>) -> crate::Result<crate::types::State<V>> {
+        self.state::<V>(format!("custom/{}", collection.as_ref()))
+    }
+
+    pub(crate) fn proxy_token(&self) -> String {
+        self.proxy_token.clone()
     }
 
     /// Creates a new appservice from
@@ -51,6 +62,7 @@ impl Appservice {
             certificate: cert.clone(),
             signing_key: signing_key.clone(),
             state,
+            proxy_token: crate::generate_key(128),
         };
 
         Ok(service)
@@ -64,10 +76,8 @@ impl Appservice {
         let config = self.config();
         let clonable_service = self.clone();
 
-        let service = self;
-
         if config.url().is_some() {
-            service.web_server
+            self.web_server
                 .set(
                     Arc::new(
                         Mutex::new(
@@ -82,7 +92,7 @@ impl Appservice {
                 .unwrap();
         }
 
-        service.proxy_server
+        self.proxy_server
             .set(
                 Arc::new(
                     Mutex::new(
@@ -98,5 +108,68 @@ impl Appservice {
                 )
             )
             .unwrap();
+    }
+
+    fn state_user_records(&self) -> crate::Result<crate::types::State<UserRecord>> {
+        self.state::<UserRecord>("internal/user_records")
+    }
+}
+
+impl Appservice {
+    async fn configure_service_client(
+        &self,
+        matrix_client: Option<matrix_sdk::ClientBuilder>,
+        http_client: Option<reqwest::ClientBuilder>
+    ) -> crate::Result<matrix_sdk::Client> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let _ = headers.insert("x-proxy-role", reqwest::header::HeaderValue::from_str("SERVICE").unwrap());
+        let _ = headers.insert("x-proxy-token", reqwest::header::HeaderValue::from_str(self.proxy_token().as_str()).unwrap());
+
+        let client = matrix_client
+            .unwrap_or(matrix_sdk::Client::builder())
+            .http_client(
+                http_client.unwrap_or(reqwest::Client::builder())
+                .add_root_certificate(Certificate::from_pem(self.certificate.as_bytes()).unwrap())
+                .default_headers(headers)
+                .proxy(reqwest::Proxy::https(format!("https://localhost:{}", self.proxy_port))?)
+                .user_agent(self.config().user_agent())
+                .build()?
+            )
+            .homeserver_url(self.config().homeserver_url()?)
+            .build().await?;
+        
+        // TODO: matrix auth
+        Ok(client)
+    }
+
+    async fn configure_bot_client(
+        &self,
+        user_id: impl AsRef<str>,
+        matrix_client: Option<matrix_sdk::ClientBuilder>,
+        http_client: Option<reqwest::ClientBuilder>
+    ) -> crate::Result<matrix_sdk::Client> {
+        let user_id = user_id.as_ref().to_string();
+        let state = self.state_user_records()?;
+        if let Some(user) = state.get(user_id.clone())? {
+            let mut headers = reqwest::header::HeaderMap::new();
+            let _ = headers.insert("x-proxy-role", reqwest::header::HeaderValue::from_str("BOT").unwrap());
+            let _ = headers.insert("x-proxy-token", reqwest::header::HeaderValue::from_str(self.proxy_token().as_str()).unwrap());
+            let _ = headers.insert("x-proxy-bot-token", reqwest::header::HeaderValue::from_str(user.token().as_str()).unwrap());
+
+            Ok(matrix_client
+                .unwrap_or(matrix_sdk::Client::builder())
+                .http_client(
+                    http_client.unwrap_or(reqwest::Client::builder())
+                    .add_root_certificate(Certificate::from_pem(self.certificate.as_bytes()).unwrap())
+                    .default_headers(headers)
+                    .proxy(reqwest::Proxy::https(format!("https://localhost:{}", self.proxy_port))?)
+                    .user_agent(self.config().user_agent())
+                    .build()?
+                )
+                .homeserver_url(self.config().homeserver_url()?)
+                .build().await?)
+        } else {
+            Err(crate::Error::UnregisteredUser(user_id))
+        }
     }
 }
