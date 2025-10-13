@@ -7,8 +7,11 @@ edition = "2024"
 anyhow = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+genrs = "0.1.1"
+getset = "0.1.6"
 matrix-sdk = { workspace = true, features = ["anyhow", "markdown", "bundled-sqlite"] }
-reqwest = { workspace = true, features = ["json", "http3", "stream"] }
+openport = { version = "0.1.1" }
+reqwest = { workspace = true, features = ["json", "stream"] }
 ruma = { workspace = true, features = ["appservice-api", "client-api"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

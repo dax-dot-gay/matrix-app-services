@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["matrix-app-services", "matrix-app-services-scratchpad"]
+members = ["matrix-app-services"]
 
 [workspace.dependencies]
 matrix-app-services = {path = "./matrix-app-services"}
@@ -8,7 +8,7 @@ anyhow = "1.0.100"
 bon = "3.8.1"
 chrono = "0.4.42"
 matrix-sdk = "0.14.0"
-reqwest = "0.12.23"
+reqwest = "0.12.24"
 ruma = "0.13.0"
 serde = "1.0.228"
 serde_json = "1.0.145"
