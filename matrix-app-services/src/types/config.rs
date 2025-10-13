@@ -1,9 +1,10 @@
-use std::{ net::SocketAddr, ops::Range };
+use std::{ net::SocketAddr, ops::Range, path::PathBuf };
 
 use bon::Builder;
 use getset::CloneGetters;
 use ruma::api::appservice as ruma_as;
 use serde::{ Deserialize, Serialize };
+use url::Url;
 
 /// An enum defining the possible types of [Namespace]
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -99,7 +100,8 @@ impl From<PortRange> for Range<u16> {
 
 /// Global configuration for the AppService
 #[derive(Serialize, Deserialize, Clone, Debug, Builder, CloneGetters)]
-#[getset(get_clone)]
+#[getset(get_clone = "pub")]
+#[builder(finish_fn(vis = "", name = build_internal))]
 pub struct Config {
     /// A unique, user-defined ID of the application service which will never change.
     #[builder(start_fn, into)]
@@ -143,12 +145,28 @@ pub struct Config {
     url: Option<String>,
 
     /// What address to bind the local server to. Ignored if `url` is `None`.
-    #[builder(into)]
+    #[builder(into, default = ([0,0,0,0], 8080))]
     local_address: SocketAddr,
 
     /// Ports to allow the internal proxy to bind to
     #[builder(into, default)]
     proxy_ports: PortRange,
+
+    /// User agent string. Will default to `<application-id>/matrix-app-services:<library version>`
+    #[builder(into, default)]
+    user_agent: String,
+
+    /// URL of homeserver (http(s)://...)
+    #[builder(into)]
+    homeserver: String,
+
+    /// URL of an external proxy to connect through (after internal proxy handling)
+    #[builder(into)]
+    proxy: Option<String>,
+
+    /// Persistent state path. Defaults to a temporary file if not provided.
+    #[builder(into)]
+    persist_state: Option<PathBuf>
 }
 
 impl<S: config_builder::State> ConfigBuilder<S> {
@@ -174,6 +192,18 @@ impl<S: config_builder::State> ConfigBuilder<S> {
     pub fn protocols(mut self, protocols: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.protocols.extend(protocols.into_iter().map(|v| v.into()));
         self
+    }
+}
+
+impl<S: config_builder::IsComplete> ConfigBuilder<S> {
+    /// Builds the final [Config]
+    pub fn build(self) -> Config {
+        let mut config = self.build_internal();
+        if config.user_agent.is_empty() {
+            config.user_agent = format!("{}/matrix-app-services:{}", config.app_id(), env!("CARGO_PKG_VERSION"));
+        }
+
+        config
     }
 }
 
@@ -210,5 +240,14 @@ impl Config {
         let mut registration = ruma_as::Registration::from(reginit);
         registration.receive_ephemeral = self.receive_ephemeral();
         registration
+    }
+
+    /// Get the homeserver URL
+    pub fn homeserver_url(&self) -> crate::Result<Url> {
+        if self.homeserver.starts_with("http") && self.homeserver.contains("://") {
+            Url::parse(&self.homeserver).or_else(|e| Err(crate::Error::url_parsing(self.homeserver(), e)))
+        } else {
+            Url::parse(&format!("https://{}", self.homeserver())).or_else(|e| Err(crate::Error::url_parsing(self.homeserver(), e)))
+        }
     }
 }

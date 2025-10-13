@@ -5,17 +5,25 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+axum = "0.8.6"
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 bon = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 genrs = "0.1.1"
 getset = "0.1.6"
 matrix-sdk = { workspace = true, features = ["anyhow", "markdown", "bundled-sqlite"] }
 openport = { version = "0.1.1" }
+parking_lot = { version = "0.12.5", features = ["serde", "arc_lock", "send_guard"] }
+rcgen = "0.14.5"
 reqwest = { workspace = true, features = ["json", "stream"] }
 ruma = { workspace = true, features = ["appservice-api", "client-api"] }
+rustls = "0.23.32"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_norway = { workspace = true }
+sled = "0.34.7"
+tempfile = "3.23.0"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tower = { workspace = true, features = ["tokio", "util", "timeout", "retry", "tokio-stream", "tokio-util"] }
+url = { version = "2.5.7", features = ["serde"] }
