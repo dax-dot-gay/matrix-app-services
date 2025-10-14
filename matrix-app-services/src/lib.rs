@@ -13,6 +13,11 @@ pub(crate) use error::Result;
 
 ///
 pub mod client;
+pub use client::Appservice;
+
+///
+pub mod virtual_client;
+pub use virtual_client::{VirtualClient, VirtualClientKind};
 
 ///
 pub mod servers;

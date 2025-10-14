@@ -248,4 +248,10 @@ impl Config {
             Url::parse(&format!("https://{}", self.homeserver())).or_else(|e| Err(crate::Error::url_parsing(self.homeserver(), e)))
         }
     }
+
+    /// Get the homeserver name
+    pub fn server_name(&self) -> String {
+        let url = self.homeserver_url().expect("Expected a valid server url/name");
+        url.host_str().expect("Expected a valid server name").to_string()
+    }
 }

@@ -57,6 +57,18 @@ impl From<matrix_sdk::ClientBuildError> for Error {
     }
 }
 
+impl From<ruma::IdParseError> for Error {
+    fn from(value: ruma::IdParseError) -> Self {
+        Self::Unknown(anyhow::Error::from(value))
+    }
+}
+
+impl From<matrix_sdk::HttpError> for Error {
+    fn from(value: matrix_sdk::HttpError) -> Self {
+        Self::Unknown(anyhow::Error::from(value))
+    }
+}
+
 impl<T: Debug + Send + Sync + 'static> From<ciborium::ser::Error<T>> for Error {
     fn from(value: ciborium::ser::Error<T>) -> Self {
         Self::Unknown(anyhow::Error::from(value))

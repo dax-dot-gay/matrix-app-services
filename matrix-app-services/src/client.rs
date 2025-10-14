@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rcgen::CertifiedKey;
 use reqwest::Certificate;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{ sync::OnceCell, task::JoinHandle };
 
-use crate::{types::user::UserRecord, Config};
+use crate::{types::{user::UserRecord, ProxyDirective, ProxyDirectiveTarget}, Config, VirtualClient};
 
 /// Appservice management instance
 #[derive(Debug, Clone)]
@@ -19,6 +19,8 @@ pub struct Appservice {
     signing_key: String,
     state: sled::Db,
     proxy_token: String,
+    clients: Arc<RwLock<HashMap<String, crate::VirtualClient>>>,
+    proxy_directives: Arc<RwLock<HashMap<ProxyDirectiveTarget, ProxyDirective>>>
 }
 
 impl Appservice {
@@ -63,6 +65,8 @@ impl Appservice {
             signing_key: signing_key.clone(),
             state,
             proxy_token: crate::generate_key(128),
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            proxy_directives: Arc::new(RwLock::new(HashMap::new()))
         };
 
         Ok(service)
@@ -110,13 +114,33 @@ impl Appservice {
             .unwrap();
     }
 
-    fn state_user_records(&self) -> crate::Result<crate::types::State<UserRecord>> {
+    pub(crate) fn state_user_records(&self) -> crate::Result<crate::types::State<UserRecord>> {
         self.state::<UserRecord>("internal/user_records")
+    }
+
+    pub(crate) fn store_client(&self, client: VirtualClient) -> () {
+        let mut clients = self.clients.write();
+        let _ = clients.insert(client.localpart(), client);
+    }
+
+    pub(crate) fn retrieve_client(&self, localpart: String) -> Option<VirtualClient> {
+        let clients = self.clients.read();
+        clients.get(&localpart).and_then(|v| Some(v.clone()))
+    }
+
+    pub(crate) fn add_proxy_directive(&self, target: ProxyDirectiveTarget, directive: ProxyDirective) -> () {
+        let mut directives = self.proxy_directives.write();
+        let _ = directives.insert(target, directive);
+    }
+
+    pub(crate) fn get_proxy_directive(&self, target: ProxyDirectiveTarget) -> Option<ProxyDirective> {
+        let mut directives = self.proxy_directives.write();
+        directives.remove(&target)
     }
 }
 
 impl Appservice {
-    async fn configure_service_client(
+    pub(crate) async fn configure_service_client(
         &self,
         matrix_client: Option<matrix_sdk::ClientBuilder>,
         http_client: Option<reqwest::ClientBuilder>
@@ -137,20 +161,19 @@ impl Appservice {
             )
             .homeserver_url(self.config().homeserver_url()?)
             .build().await?;
-        
-        // TODO: matrix auth
+
         Ok(client)
     }
 
-    async fn configure_bot_client(
+    pub(crate) async fn configure_bot_client(
         &self,
-        user_id: impl AsRef<str>,
+        localpart: impl AsRef<str>,
         matrix_client: Option<matrix_sdk::ClientBuilder>,
         http_client: Option<reqwest::ClientBuilder>
     ) -> crate::Result<matrix_sdk::Client> {
-        let user_id = user_id.as_ref().to_string();
+        let localpart = localpart.as_ref().to_string();
         let state = self.state_user_records()?;
-        if let Some(user) = state.get(user_id.clone())? {
+        if let Some(user) = state.get(localpart.clone())? {
             let mut headers = reqwest::header::HeaderMap::new();
             let _ = headers.insert("x-proxy-role", reqwest::header::HeaderValue::from_str("BOT").unwrap());
             let _ = headers.insert("x-proxy-token", reqwest::header::HeaderValue::from_str(self.proxy_token().as_str()).unwrap());
@@ -169,7 +192,7 @@ impl Appservice {
                 .homeserver_url(self.config().homeserver_url()?)
                 .build().await?)
         } else {
-            Err(crate::Error::UnregisteredUser(user_id))
+            Err(crate::Error::UnregisteredUser(localpart))
         }
     }
 }
