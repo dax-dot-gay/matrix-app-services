@@ -3,12 +3,7 @@ use matrix_sdk::stream::StreamExt;
 
 use crate::{ client::Appservice, Config };
 
-async fn handle_service(state: axum::extract::State<Appservice>, request: axum::extract::Request) -> axum::response::Response {
-    println!("GOT AS REQUEST: {request:?}");
-    let body_data: axum::body::Bytes = request.extract().await.unwrap();
-    println!("BODY: {}", String::from_utf8_lossy(&body_data.to_vec()).to_string());
-    axum::response::Response::new("{}".into())
-}
+async fn 
 
 pub async fn serve_appservice(service: Appservice) -> crate::Result<()> {
     let handler = Router::new()

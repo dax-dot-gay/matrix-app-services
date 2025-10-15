@@ -12,3 +12,6 @@ pub mod user;
 ///
 pub(crate) mod proxy;
 pub(crate) use proxy::{ProxyDirective, ProxyDirectiveTarget};
+
+///
+pub mod appservice;
