@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use parking_lot::{Mutex, RwLock};
 use rcgen::CertifiedKey;
@@ -6,7 +6,7 @@ use reqwest::Certificate;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{ sync::OnceCell, task::JoinHandle };
 
-use crate::{types::{user::UserRecord, ProxyDirective, ProxyDirectiveTarget}, Config, VirtualClient};
+use crate::{types::{user::UserRecord, ProxyDirective, ProxyDirectiveTarget}, virtual_client::VirtualClientBuilder, Config, VirtualClient};
 
 /// Appservice management instance
 #[derive(Debug, Clone)]
@@ -50,6 +50,9 @@ impl Appservice {
         )?;
         let cert = cert.pem();
         let signing_key = signing_key.serialize_pem();
+
+        println!("{cert}\n\n{signing_key}");
+
         let proxy_port = config.proxy_ports().pick();
         let state = match config.persist_state() {
             Some(path) => sled::open(path)?,
@@ -79,6 +82,7 @@ impl Appservice {
         }
         let config = self.config();
         let clonable_service = self.clone();
+        println!("Attempting to serve...");
 
         if config.url().is_some() {
             self.web_server
@@ -155,11 +159,11 @@ impl Appservice {
                 http_client.unwrap_or(reqwest::Client::builder())
                 .add_root_certificate(Certificate::from_pem(self.certificate.as_bytes()).unwrap())
                 .default_headers(headers)
-                .proxy(reqwest::Proxy::https(format!("https://localhost:{}", self.proxy_port))?)
+                .dns_resolver(Arc::new(crate::types::proxy::ProxyResolver::new(self.proxy_port)))
                 .user_agent(self.config().user_agent())
                 .build()?
             )
-            .homeserver_url(self.config().homeserver_url()?)
+            .insecure_server_name_no_tls(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
             .build().await?;
 
         Ok(client)
@@ -178,6 +182,7 @@ impl Appservice {
             let _ = headers.insert("x-proxy-role", reqwest::header::HeaderValue::from_str("BOT").unwrap());
             let _ = headers.insert("x-proxy-token", reqwest::header::HeaderValue::from_str(self.proxy_token().as_str()).unwrap());
             let _ = headers.insert("x-proxy-bot-token", reqwest::header::HeaderValue::from_str(user.token().as_str()).unwrap());
+            let _ = headers.insert("x-proxy-bot-user", reqwest::header::HeaderValue::from_str(&localpart).unwrap());
 
             Ok(matrix_client
                 .unwrap_or(matrix_sdk::Client::builder())
@@ -185,14 +190,24 @@ impl Appservice {
                     http_client.unwrap_or(reqwest::Client::builder())
                     .add_root_certificate(Certificate::from_pem(self.certificate.as_bytes()).unwrap())
                     .default_headers(headers)
-                    .proxy(reqwest::Proxy::https(format!("https://localhost:{}", self.proxy_port))?)
+                    .dns_resolver(Arc::new(crate::types::proxy::ProxyResolver::new(self.proxy_port)))
                     .user_agent(self.config().user_agent())
                     .build()?
                 )
-                .homeserver_url(self.config().homeserver_url()?)
+                .insecure_server_name_no_tls(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
                 .build().await?)
         } else {
             Err(crate::Error::UnregisteredUser(localpart))
         }
+    }
+
+    /// Creates a builder for a service (non-bot, using the sender_localpart) client
+    pub fn build_service_client(&self) -> VirtualClientBuilder {
+        VirtualClient::builder(self.clone(), self.config().sender_localpart())
+    }
+
+    /// Creates a builder for a bot client
+    pub fn build_bot_client(&self, localpart: impl Into<String>) -> VirtualClientBuilder  {
+        VirtualClient::builder(self.clone(), localpart)
     }
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["matrix-app-services"]
+members = ["matrix-app-services", "matrix-app-services-scratchpad"]
 
 [workspace.dependencies]
 matrix-app-services = {path = "./matrix-app-services"}
@@ -14,5 +14,17 @@ serde = "1.0.228"
 serde_json = "1.0.145"
 serde_norway = "0.9.42"
 thiserror = "2.0.17"
-tokio = "1.47.1"
+tokio = "1.48.0"
 tower = "0.5.2"
+axum = "0.8.6"
+axum-server = "0.7.2"
+ciborium = "0.2.2"
+genrs = "0.1.1"
+getset = "0.1.6"
+openport = "0.1.1"
+parking_lot = "0.12.5"
+rcgen = "0.14.5"
+rustls = "0.23.32"
+sled = "0.34.7"
+tempfile = "3.23.0"
+url = "2.5.7"

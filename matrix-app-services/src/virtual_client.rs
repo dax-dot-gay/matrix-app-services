@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use matrix_sdk::{
     authentication::matrix::MatrixSession as Session,
     ruma,
@@ -86,6 +88,7 @@ impl VirtualClientBuilder {
 
     /// Build the resulting VirtualClient
     pub async fn build(self) -> crate::Result<VirtualClient> {
+        println!("Building...");
         if !self.create_new {
             if let Some(client) = self.service.retrieve_client(self.localpart.clone()) {
                 return Ok(client);
@@ -102,6 +105,7 @@ impl VirtualClientBuilder {
             VirtualClientKind::Bot
         };
 
+        println!("Configuring...");
         let internal_client = match client_kind {
             VirtualClientKind::Bot =>
                 self.service.configure_bot_client(
@@ -116,6 +120,7 @@ impl VirtualClientBuilder {
                 ).await?,
         };
 
+        println!("Setting up session");
         let session = if let Some(session) = self.restored_session {
             session
         } else if self.log_in && client_kind != VirtualClientKind::Service {
@@ -188,5 +193,12 @@ impl VirtualClient {
     /// Whether this client is a bot user or a service user
     pub fn kind(&self) -> VirtualClientKind {
         self.kind.clone()
+    }
+}
+
+impl Deref for VirtualClient {
+    type Target = Client;
+    fn deref(&self) -> &Self::Target {
+        &self.client
     }
 }

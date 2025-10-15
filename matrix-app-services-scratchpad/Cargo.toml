@@ -1,11 +1,12 @@
 [package]
-name = "matrix-app-services"
+name = "matrix-app-services-scratchpad"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+matrix-app-services = {workspace = true}
 anyhow = { workspace = true }
-axum = { workspace = true, features = ["macros"] }
+axum = { workspace = true }
 axum-server = { workspace = true, features = ["tls-rustls"] }
 bon = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
