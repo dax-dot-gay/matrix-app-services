@@ -45,13 +45,12 @@ impl Appservice {
 
     /// Creates a new appservice from
     pub fn new(config: Config) -> crate::Result<Self> {
+        rustls::crypto::ring::default_provider().install_default().unwrap();
         let CertifiedKey { cert, signing_key } = rcgen::generate_simple_self_signed(
             vec!["localhost".to_string()]
         )?;
         let cert = cert.pem();
         let signing_key = signing_key.serialize_pem();
-
-        println!("{cert}\n\n{signing_key}");
 
         let proxy_port = config.proxy_ports().pick();
         let state = match config.persist_state() {
@@ -109,7 +108,7 @@ impl Appservice {
                                 clonable_service.clone(),
                                 clonable_service.proxy_port.clone(),
                                 clonable_service.certificate.clone(),
-                                clonable_service.certificate.clone()
+                                clonable_service.signing_key.clone()
                             )
                         )
                     )
@@ -152,7 +151,7 @@ impl Appservice {
         let mut headers = reqwest::header::HeaderMap::new();
         let _ = headers.insert("x-proxy-role", reqwest::header::HeaderValue::from_str("SERVICE").unwrap());
         let _ = headers.insert("x-proxy-token", reqwest::header::HeaderValue::from_str(self.proxy_token().as_str()).unwrap());
-
+        println!("INNER_CONF");
         let client = matrix_client
             .unwrap_or(matrix_sdk::Client::builder())
             .http_client(
@@ -161,9 +160,11 @@ impl Appservice {
                 .default_headers(headers)
                 .dns_resolver(Arc::new(crate::types::proxy::ProxyResolver::new(self.proxy_port)))
                 .user_agent(self.config().user_agent())
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
                 .build()?
             )
-            .insecure_server_name_no_tls(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
+            .server_name(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
             .build().await?;
 
         Ok(client)
@@ -192,9 +193,11 @@ impl Appservice {
                     .default_headers(headers)
                     .dns_resolver(Arc::new(crate::types::proxy::ProxyResolver::new(self.proxy_port)))
                     .user_agent(self.config().user_agent())
+                    .danger_accept_invalid_certs(true)
+                    .danger_accept_invalid_hostnames(true)
                     .build()?
                 )
-                .insecure_server_name_no_tls(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
+                .server_name(&matrix_sdk::ruma::ServerName::parse(self.config().server_name()).unwrap())
                 .build().await?)
         } else {
             Err(crate::Error::UnregisteredUser(localpart))

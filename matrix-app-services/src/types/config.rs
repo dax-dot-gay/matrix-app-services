@@ -41,19 +41,19 @@ impl Namespace {
         Self { kind, regex: regex.into(), exclusive }
     }
 
-    /// Creates a new exclusive alias [Namespace].
+    /// Creates a new non-exclusive alias [Namespace].
     pub fn alias(regex: impl Into<String>) -> Self {
-        Self { kind: NamespaceKind::Alias, regex: regex.into(), exclusive: true }
+        Self { kind: NamespaceKind::Alias, regex: regex.into(), exclusive: false }
     }
 
-    /// Creates a new exclusive room [Namespace].
+    /// Creates a new non-exclusive room [Namespace].
     pub fn room(regex: impl Into<String>) -> Self {
-        Self { kind: NamespaceKind::Room, regex: regex.into(), exclusive: true }
+        Self { kind: NamespaceKind::Room, regex: regex.into(), exclusive: false }
     }
 
-    /// Creates a new exclusive user [Namespace].
+    /// Creates a new non-exclusive user [Namespace].
     pub fn user(regex: impl Into<String>) -> Self {
-        Self { kind: NamespaceKind::User, regex: regex.into(), exclusive: true }
+        Self { kind: NamespaceKind::User, regex: regex.into(), exclusive: false }
     }
 }
 
@@ -253,5 +253,11 @@ impl Config {
     pub fn server_name(&self) -> String {
         let url = self.homeserver_url().expect("Expected a valid server url/name");
         url.host_str().expect("Expected a valid server name").to_string()
+    }
+
+    /// Output the registration as YAML
+    pub fn registration_yaml(&self) -> crate::Result<String> {
+        let reg = self.registration();
+        Ok(serde_norway::to_string(&reg)?)
     }
 }

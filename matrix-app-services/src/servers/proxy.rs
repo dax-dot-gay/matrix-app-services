@@ -3,6 +3,7 @@ use std::{ net::SocketAddr, sync::Arc, usize };
 use axum::{ body::Body, http, response::Response, Router };
 use getset::CloneGetters;
 use reqwest::header::{AUTHORIZATION, HOST};
+use rustls::crypto::CryptoProvider;
 
 use crate::client::Appservice;
 
@@ -58,8 +59,16 @@ impl ProxiedRequest {
         }
     }
 
-    pub fn into_request(self, client: reqwest::Client) -> crate::Result<reqwest::Request> {
-        Ok(client.request(self.method(), self.url()).version(self.version()).headers(self.headers()).body(Arc::into_inner(self.body).unwrap()).build()?)
+    pub fn into_request(self, service: Appservice, client: reqwest::Client) -> crate::Result<reqwest::Request> {
+        let proxy_url = if self.url().host_str().is_some_and(|host| host.to_string() == service.config().homeserver_url().unwrap().host_str().unwrap().to_string()) {
+            let mut transformed_url = self.url();
+            let _ = transformed_url.set_scheme(service.config().homeserver_url().unwrap().scheme());
+            transformed_url
+        } else {
+            self.url()
+        };
+        
+        Ok(client.request(self.method(), proxy_url).version(self.version()).headers(self.headers()).body(Arc::into_inner(self.body).unwrap()).build()?)
     }
 
     pub fn verify_entity(&self, service: Appservice) -> Option<ProxiedEntity> {
@@ -99,13 +108,23 @@ impl ProxiedRequest {
     pub fn authorize(mut self, entity: ProxiedEntity) -> Self {
         match entity {
             ProxiedEntity::Service { authorization } => {
-                let _ = self.headers.insert(AUTHORIZATION, authorization.parse().unwrap());
+                let _ = self.headers.insert(AUTHORIZATION, format!("Bearer {}", authorization).parse().unwrap());
             },
             ProxiedEntity::Bot { authorization, user_id } => {
-                let _ = self.headers.insert(AUTHORIZATION, authorization.parse().unwrap());
+                let _ = self.headers.insert(AUTHORIZATION, format!("Bearer {}", authorization).parse().unwrap());
                 self.url.query_pairs_mut().append_pair("user_id", &user_id);
             }
         }
+
+        self.headers = self.headers.into_iter().filter_map(|(name, value)| {
+            if name.clone().is_some_and(|n| n.as_str().starts_with("x-proxy-")) {
+                None
+            } else if let Some(set_name) = name {
+                Some((set_name, value))
+            } else {
+                None
+            }
+        }).collect();
 
         self
     }
@@ -120,10 +139,10 @@ async fn handle_proxy(
     let service = state.1.clone();
     let request = ProxiedRequest::from(request);
     println!("PROXYING: {request:?}");
-    if let Some(verified) = request.verify_entity(service) {
+    if let Some(verified) = request.verify_entity(service.clone()) {
         let request = request.authorize(verified);
         println!("AUTHORIZED: {request:?}");
-        let rqw = request.into_request(client.clone()).unwrap();
+        let rqw = request.into_request(service.clone(), client.clone()).unwrap();
         match client.execute(rqw).await {
             Ok(response) => {
                 let mut rsp = axum::response::Response::builder();
@@ -150,11 +169,11 @@ pub async fn serve_proxy(
     key: String
 ) -> crate::Result<()> {
     let client = reqwest::Client::new();
-    //let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem(cert.into_bytes(), key.into_bytes()).await.expect("Failed to configure proxy TLS");
+    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem(cert.into_bytes(), key.into_bytes()).await.expect("Failed to configure proxy TLS");
     let handler = Router::new()
         .fallback(handle_proxy)
         .with_state((client, service) as ProxyState)
         .into_make_service();
-    axum_server::bind(SocketAddr::from(([127, 0, 0, 1], proxy_port))).serve(handler).await?;
+    axum_server::bind_rustls(SocketAddr::from(([127, 0, 0, 1], proxy_port)), tls_config).serve(handler).await?;
     Ok(())
 }

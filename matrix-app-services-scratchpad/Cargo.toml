@@ -29,3 +29,4 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tower = { workspace = true, features = ["tokio", "util", "timeout", "retry", "tokio-stream", "tokio-util"] }
 url = { workspace = true, features = ["serde"] }
+dotenv = "0.15.0"

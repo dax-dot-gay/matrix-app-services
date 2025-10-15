@@ -35,7 +35,11 @@ pub enum Error {
 
     /// The requested user has not yet been registered/set up
     #[error("Unregistered user: {0}")]
-    UnregisteredUser(String)
+    UnregisteredUser(String),
+
+    /// YAML error
+    #[error("YAML error: {0:?}")]
+    Yaml(#[from] serde_norway::Error)
 }
 
 #[allow(missing_docs)]
